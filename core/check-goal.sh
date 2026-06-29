@@ -37,7 +37,8 @@ run_timed(){
   [ "$rc" -gt 128 ] && rc=124   # 被信号杀(超时)统一成 124,和 GNU timeout 对齐
   return "$rc"
 }
-run_done(){ run_timed "${DONE_TIMEOUT:-120}" bash -c "${DONE_CMD:-false}" >/dev/null 2>&1; }
+# 在项目根(GK_DIR 的父目录)跑 DONE_CMD —— 否则 opencode 插件等调用方 cwd 不在项目根时,npm test 找不到 package.json
+run_done(){ ( cd "$GK_DIR/.." 2>/dev/null && run_timed "${DONE_TIMEOUT:-120}" bash -c "${DONE_CMD:-false}" >/dev/null 2>&1 ); }
 
 # 判完成最优先:退出码 0 = 真达成
 if run_done; then

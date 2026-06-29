@@ -45,8 +45,12 @@ idx=0
 have() { command -v "$1" >/dev/null 2>&1; }
 check() { # $1 显示名  $2 检测命令(zcode 留空)  $3 平台key
   local ok=0
-  if [ "$3" = "zcode" ]; then [ -d "/Applications/ZCode.app" ] && ok=1
-  elif have "$2"; then ok=1; fi
+  case "$3" in
+    zcode)    [ -d "/Applications/ZCode.app" ] && ok=1 ;;
+    opencode) { have "$2" || [ -d "$HOME/.config/opencode" ] || [ -d "$HOME/.opencode" ] || [ -d "/Applications/OpenCode.app" ]; } && ok=1 ;;
+    pi)       { have "$2" || [ -d "$HOME/.pi" ]; } && ok=1 ;;
+    *)        have "$2" && ok=1 ;;
+  esac
   if [ "$ok" = "1" ]; then idx=$((idx+1)); F_NAME[$idx]="$1"; F_KEY[$idx]="$3"; printf "  [%d] %s\n" "$idx" "$1"; fi
 }
 say "检测到的 coding agent:"

@@ -136,5 +136,6 @@ export const Goalkeeper = async ({ client, directory }) => {
   };
 };
 
-// opencode 插件 export(三实现的形状: default { id, server })
-export default { id: "goalkeeper", server: Goalkeeper };
+// opencode 自动加载本地 .opencode/plugins/*.js 时,要求 export 是 function(返回 hooks 对象);
+// {id,server} 对象形状会报 "Plugin export is not a function"。named 已是 function,default 也给成 function。
+export default Goalkeeper;
