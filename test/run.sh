@@ -3,7 +3,7 @@
 # 真 agent 端到端验证(Claude Code 等)不在这里,见 TESTING.md。
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+TMP="$(mktemp -d)" || { echo "mktemp 失败"; exit 1; }; [ -n "$TMP" ] || exit 1; trap 'rm -rf "$TMP"' EXIT
 PASS=0; FAIL=0
 ok(){ PASS=$((PASS+1)); printf '  \033[32m✓\033[0m %s\n' "$1"; }
 no(){ FAIL=$((FAIL+1)); printf '  \033[31m✗\033[0m %s\n' "$1"; }
@@ -51,6 +51,18 @@ PATH="$TMP/bin:$PATH" GOALKEEPER_TARGET="$HT" GOALKEEPER_PICK=1 bash "$ROOT/inst
 [[ -f "$HT/.claude/settings.json" ]] && ok "install → .claude/settings.json" || no "install claude 配置"
 if python3 -c "import json;d=json.load(open('$HT/.claude/settings.json'));assert d['hooks']['Stop'][0]['hooks'][0]['type']=='command'" 2>/dev/null; then
   ok "settings.json 是合法的嵌套 Stop hook"; else no "settings.json 结构"; fi
+
+echo "== DONE_CMD 超时(防卡死,macOS 无 timeout 也要生效)=="
+setup '"sleep 30"' 9 0; echo 'DONE_TIMEOUT=2' >> "$TMP/p/.goalkeeper/goal.sh"
+s=$(date +%s); run >/dev/null; el=$(( $(date +%s) - s ))
+[ "$el" -lt 12 ] && ok "DONE_CMD 卡死被超时打断(${el}s,没卡满 30s)" || no "DONE_CMD 超时未生效(${el}s)"
+
+echo "== install opencode 目录是复数 plugins/(防回归 plugin/)=="
+PYDIR="$(dirname "$(command -v python3 || echo /usr/bin/python3)")"
+mkdir -p "$TMP/ocbin"; printf '#!/bin/sh\nexit 0\n' > "$TMP/ocbin/opencode"; chmod +x "$TMP/ocbin/opencode"
+HO="$TMP/ochome"; mkdir -p "$HO"
+PATH="$TMP/ocbin:$PYDIR:/usr/bin:/bin" GOALKEEPER_TARGET="$HO" GOALKEEPER_PICK=1 bash "$ROOT/install.sh" >/dev/null 2>&1
+[ -f "$HO/.opencode/plugins/goalkeeper.js" ] && ok "install → .opencode/plugins/(复数)" || no "opencode 应装到复数 plugins/"
 
 echo
 echo "─────────────────────────────"

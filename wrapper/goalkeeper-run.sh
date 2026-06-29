@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
 # goalkeeper · 通用 wrapper(档3)
 # 给没有"强制续跑"stop 钩子的 agent 兜底:hermes / openclaw / 任意 headless CLI。
-# 它在进程外包一个循环:调 agent 跑一轮 -> 跑完成条件命令 -> 没过就把失败原因当下一轮 prompt 再调,直到达成或撞刹车。
-#
+# 进程外循环:调 agent 跑一轮 -> 跑 DONE_CMD -> 没过把失败原因当下一轮 prompt 再调,直到达成或撞刹车。
 # 用法: goalkeeper-run.sh "任务描述"
-#   AGENT_CMD / RESUME_FLAG / DONE_CMD / MAX_TURNS 从 .goalkeeper/goal.sh 读,可用环境变量覆盖。
 set -uo pipefail
 
 GKDIR="${GOALKEEPER_DIR:-$PWD/.goalkeeper}"
@@ -16,9 +14,25 @@ TASK="${1:?用法: goalkeeper-run.sh \"任务描述\"}"
 : "${MAX_TURNS:=10}"
 : "${AGENT_CMD:=hermes -z}"
 : "${RESUME_FLAG:=--continue}"
-: "${TURN_TIMEOUT:=1800}"        # 单轮墙钟秒数,防单轮挂死
-: "${NO_PROGRESS_LIMIT:=3}"      # 连续几轮无进展就判卡死
-: "${MAX_SECONDS:=0}"            # 刹车:总墙钟预算(秒,0=不限)
+: "${TURN_TIMEOUT:=1800}"          # 单轮墙钟秒数
+: "${DONE_TIMEOUT:=120}"           # 单次 DONE_CMD 最多跑多久,防卡死
+: "${NO_PROGRESS_LIMIT:=3}"        # 连续几轮无进展就判卡死
+: "${MAX_SECONDS:=0}"              # 总墙钟预算(0=不限)
+: "${MAX_OUTPUT_CHARS:=4000}"      # 喂回模型的失败输出上限,防 token / secret 泄漏
+
+# 超时命令:优先 GNU timeout/gtimeout;macOS 默认两者都没有,guard 里用纯 bash 兜底
+TIMEOUT_BIN="$(command -v timeout || command -v gtimeout || true)"
+
+# 超时跑一条命令:有 timeout 命令就用;没有就纯 bash 后台 + watcher kill(macOS 兜底,不再裸跑卡死)
+guard(){
+  local secs=$1; shift
+  if [ -n "$TIMEOUT_BIN" ]; then "$TIMEOUT_BIN" "$secs" "$@"; return $?; fi
+  "$@" & local pid=$!
+  ( sleep "$secs"; kill -TERM "$pid" 2>/dev/null; sleep 2; kill -KILL "$pid" 2>/dev/null ) >/dev/null 2>&1 & local w=$!
+  wait "$pid" 2>/dev/null; local rc=$?
+  kill "$w" 2>/dev/null; wait "$w" 2>/dev/null
+  return "$rc"
+}
 
 prompt="$TASK"; resume=""; last_fp=""; stale=0; START_TS=$(date +%s)
 
@@ -30,32 +44,29 @@ for ((t=1; t<=MAX_TURNS; t++)); do
     echo "撞时间预算 ${MAX_SECONDS}s,停。" >&2; exit 4
   fi
 
-  # 1) 调 agent 跑一轮(单轮超时保护)。第一轮全新,之后续接 session。
+  # 1) 调 agent 跑一轮(单轮超时保护)。捕获退出码:124=超时,非0=认证失败/命令不存在/崩溃,都别空转。
   # shellcheck disable=SC2086
-  timeout "$TURN_TIMEOUT" $AGENT_CMD $resume "$prompt"
-  [ $? -eq 124 ] && { echo "单轮超时,停。" >&2; exit 2; }
+  guard "$TURN_TIMEOUT" $AGENT_CMD $resume "$prompt"; arc=$?
+  [ "$arc" -eq 124 ] && { echo "单轮超时(${TURN_TIMEOUT}s),停。" >&2; exit 2; }
+  [ "$arc" -ne 0 ] && { echo "agent 非正常退出(rc=$arc:认证失败/命令不存在/崩溃?),停,别空转误判。" >&2; exit 5; }
   resume="$RESUME_FLAG"
 
-  # 2) 跑完成条件命令,捕获输出 + 退出码
-  out="$(eval "$DONE_CMD" 2>&1)"; rc=$?
-  if [ "$rc" -eq 0 ]; then
-    echo "✅ 达成(完成条件退出码 0),共 $t 轮。" >&2
-    exit 0
-  fi
+  # 2) 跑完成条件命令(超时包住),捕获输出 + 退出码
+  out="$(guard "$DONE_TIMEOUT" bash -c "$DONE_CMD" 2>&1)"; rc=$?
+  if [ "$rc" -eq 0 ]; then echo "✅ 达成(完成条件退出码 0),共 $t 轮。" >&2; exit 0; fi
 
   # 3) 无进展刹车:完成命令输出 + 代码状态指纹连续不变 -> 判卡死
   fp="$(printf '%s' "$out" | shasum 2>/dev/null)$(git status --porcelain 2>/dev/null | shasum 2>/dev/null)"
   if [ "$fp" = "$last_fp" ]; then
     stale=$((stale+1)); echo "无进展 $stale/$NO_PROGRESS_LIMIT" >&2
     [ "$stale" -ge "$NO_PROGRESS_LIMIT" ] && { echo "连续无进展,停。" >&2; exit 3; }
-  else
-    stale=0
-  fi
+  else stale=0; fi
   last_fp="$fp"
 
-  # 4) 把失败原因当下一轮 prompt 喂回
-  prompt="完成条件 \`$DONE_CMD\` 仍未通过(退出码 $rc)。失败输出:
-$out
+  # 4) 把失败原因(截断,防 token / secret 泄漏)当下一轮 prompt 喂回
+  clip="$(printf '%s' "$out" | tail -c "$MAX_OUTPUT_CHARS")"
+  prompt="完成条件 \`$DONE_CMD\` 仍未通过(退出码 $rc)。失败输出(末 ${MAX_OUTPUT_CHARS} 字符):
+$clip
 
 请继续修复,直到该命令退出码为 0。只改必要代码,不要改测试本身。"
 done

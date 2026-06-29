@@ -1,27 +1,33 @@
-// goalkeeper · pi 适配(档2 · 扩展)
-// 机制:监听 agent_end(整个 agent 循环跑完,最贴"agent 想停"的语义),
-//       spawn .goalkeeper/check-goal.sh 判定;未达成它会输出 {"decision":"block","reason":...},
-//       插件就用 pi.sendUserMessage(reason, { deliverAs: "followUp" }) 等 agent idle 后投回续轮。
+// goalkeeper · pi 适配(档2 · 扩展)— 🧪 实验性,未在真 pi 端到端验证
+// 机制:监听 agent_end(整个 agent 循环跑完),spawn .goalkeeper/check-goal.sh 判定;
+//       未达成用 sendUserMessage(.., {deliverAs:"followUp"}) 等 idle 后投回续轮。
 //
 // 装到全局: pi install npm:goalkeeper-pi  或开发期 pi -e ./goalkeeper.ts
-// 参考现成实现: https://github.com/code-yeongyu/pi-goal —— 落地前核对方法签名。
+// ⚠ sendUserMessage 的方法签名按现成 pi-goal 推断,落地前核对 —— 见 TESTING.md。
+//   参考: https://github.com/code-yeongyu/pi-goal
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 
 export default function (pi: any) {
   pi.on("agent_end", async (_event: any, ctx: any) => {
     const dir = (ctx && ctx.cwd) || process.cwd();
+
     let out = "";
     try {
-      out = execFileSync(join(dir, ".goalkeeper", "check-goal.sh"), {
-        encoding: "utf8",
-        input: "",
-      });
-    } catch {
-      return; // 脚本不存在 / 出错 -> 不干预,放行
+      out = execFileSync(join(dir, ".goalkeeper", "check-goal.sh"), { encoding: "utf8", input: "" });
+    } catch (e: any) {
+      // 守门员坏了:不静默,记一笔(放行,避免 agent 卡死)
+      console.error("[goalkeeper] check-goal.sh 执行失败,本轮不拦截:", (e && e.message) || e);
+      return;
     }
-    const m = out.match(/"reason":"(.+?)"\}/);
-    if (!m) return; // 无 block 输出 = 已达成或撞刹车,放行
-    pi.sendUserMessage(m[1], { deliverAs: "followUp" });
+    if (!out.trim()) return; // 无输出 = 已达成或撞刹车,放行
+
+    let decision: any;
+    try { decision = JSON.parse(out); } // JSON.parse,不用正则(reason 含 "} 会截断)
+    catch { console.error("[goalkeeper] 判定输出非 JSON,跳过:", out); return; }
+    if (!decision || decision.decision !== "block" || !decision.reason) return;
+
+    try { pi.sendUserMessage(decision.reason, { deliverAs: "followUp" }); }
+    catch (e: any) { console.error("[goalkeeper] 续轮失败(API 签名可能不符,见 TESTING.md):", (e && e.message) || e); }
   });
 }

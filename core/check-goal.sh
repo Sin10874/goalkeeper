@@ -21,8 +21,23 @@ clear_state(){ rm -f "$GK_DIR/.turns" "$GK_DIR/.started"; }
 # JSON 字符串转义:防 GOAL/DONE_CMD 里的 " \ 换行 破坏 block JSON(顺序:先反斜杠)
 json_escape(){ local s=$1; s=${s//\\/\\\\}; s=${s//\"/\\\"}; s=${s//$'\r'/}; s=${s//$'\n'/\\n}; s=${s//$'\t'/\\t}; printf '%s' "$s"; }
 
-# 判完成最优先:跑完成条件命令,退出码 0 = 真达成
-if eval "${DONE_CMD:-false}" >/dev/null 2>&1; then
+# 跑完成条件命令 —— 用超时包住,否则 DONE_CMD 卡死会让整个 hook 挂死、时间预算永不放行。
+# 安全边界:DONE_CMD 是你在自己项目 .goalkeeper/goal.sh 里写的,等同本地脚本;别执行不可信的 goal.sh。
+TIMEOUT_BIN="$(command -v timeout || command -v gtimeout || true)"
+# 超时跑一条命令:优先 GNU timeout/gtimeout;macOS 默认两者都没有,用纯 bash 后台 + watcher kill 兜底。
+run_timed(){
+  local secs=$1; shift
+  if [ -n "$TIMEOUT_BIN" ]; then "$TIMEOUT_BIN" "$secs" "$@"; return $?; fi
+  "$@" & local pid=$!
+  ( sleep "$secs"; kill -TERM "$pid" 2>/dev/null; sleep 2; kill -KILL "$pid" 2>/dev/null ) >/dev/null 2>&1 & local w=$!
+  wait "$pid" 2>/dev/null; local rc=$?
+  kill "$w" 2>/dev/null; wait "$w" 2>/dev/null
+  return "$rc"
+}
+run_done(){ run_timed "${DONE_TIMEOUT:-120}" bash -c "${DONE_CMD:-false}" >/dev/null 2>&1; }
+
+# 判完成最优先:退出码 0 = 真达成
+if run_done; then
   echo "complete" > "$GK_DIR/.status"; clear_state; exit 0
 fi
 

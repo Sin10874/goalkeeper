@@ -53,8 +53,8 @@ MAX_SECONDS=0            # 刹车2: 最多跑多少秒(0=不限);长任务建议
 |---|---|---|---|
 | **Claude Code** | stdout-JSON hook | `.claude/settings.json` | ✅ **端到端真验证**(`claude -p` 跑过:拦回续轮 + 刹车全过) |
 | Kimi Code | stdout-JSON hook | **全局** `~/.kimi/config.toml`(见下) | ⚙️ 判定逻辑同 CC,但 Kimi CLI 未端到端实测 |
-| Kiro | stdout-JSON hook | `.kiro/agents/goalkeeper.json` | ⚙️ 逻辑同 CC;CLI 未实测,且 Kiro 有吞行 bug([#4183](https://github.com/kirodotdev/Kiro/issues/4183)) |
-| opencode | 事件插件 | `.opencode/plugin/goalkeeper.js` | 🧪 **实验性**:续轮 API(`promptAsync`)从社区推断,**未在真 opencode 验证** |
+| Kiro | ✗ 不支持 | — | **Kiro 的 Stop hook 是 observe-only、不能 block**,做不了 goal mode(只有 PreToolUse 等能拦);有 headless 可走 wrapper 档 |
+| opencode | 事件插件 | `.opencode/plugins/goalkeeper.js` | 🧪 **实验性**:续轮 API 从 SDK 推断,**未在真 opencode 验证** |
 | pi | 事件插件 | `.pi/extensions/goalkeeper.ts` | 🧪 **实验性**:`sendUserMessage` 同上,**未在真 pi 验证** |
 | openclaw / hermes | wrapper | `goalkeeper-run.sh` | ⚙️ wrapper 逻辑实测(mock agent);真 agent 未端到端 |
 | ZCode | — | (GUI,无 CLI) | 用它自带 `/goal`,或走 Claude Code 路线 |
@@ -71,7 +71,7 @@ MAX_SECONDS=0            # 刹车2: 最多跑多少秒(0=不限);长任务建议
 
 所有平台共用同一个判定真相源 `.goalkeeper/check-goal.sh`:跑 `DONE_CMD` 看退出码 + `MAX_TURNS`(轮数) / `MAX_SECONDS`(时间)双刹车。各平台只是**用不同方式把它钩进"agent 想停"那一刻**:
 
-- **档 1 · 原生 Stop 钩子**(Claude Code / Kimi / Kiro):agent 的停止钩子直接调 `check-goal.sh`,读它返回的 `{"decision":"block","reason":...}` 决定拦不拦。三家配置载体不同(JSON / TOML / JSON),脚本同一个。
+- **档 1 · 原生 Stop 钩子**(Claude Code / Kimi):agent 的停止钩子直接调 `check-goal.sh`,读它返回的 `{"decision":"block","reason":...}` 决定拦不拦。配置载体不同(JSON / TOML),脚本同一个。(Kiro 的 Stop hook 是 observe-only、不能 block,做不了这件事 —— 见上表。)
 - **档 2 · 事件插件**(opencode / pi):插件挂 `session.idle` / `agent_end` 事件,`spawn` 一次 `check-goal.sh` 判定,没达成就用各家续轮 API(`client.session.promptAsync()` / `pi.sendUserMessage(.., {deliverAs:"followUp"})`)把"继续修"投回去。
 - **档 3 · 通用 wrapper**(hermes / openclaw / 任意 headless CLI):它们没有"强制续跑"的钩子,改用 `.goalkeeper/goalkeeper-run.sh "任务"` 在**进程外**包一个循环:调 agent 跑一轮 → 跑 `DONE_CMD` → 没过把失败输出当下一轮 prompt 再调,直到达成或撞刹车。
 
@@ -91,8 +91,10 @@ MAX_SECONDS=0            # 刹车2: 最多跑多少秒(0=不限);长任务建议
 
 ## 诚实的边界
 
-- **档 2 的续轮 API**(opencode 的 `promptAsync`、pi 的 `sendUserMessage`)是从官方插件文档 + 现成 goal 插件源码确认的;落地前请按 `adapters/*/` 文件注释里的参考 repo 核对一次方法签名。
-- **Kiro** 的 stop hook 有已知 bug([Kiro#4183](https://github.com/kirodotdev/Kiro/issues/4183),会吞响应最后一行),上线前真机验证一次 block→续轮链路。
+- **档 2(opencode / pi)是实验性** —— 续轮 API 的方法签名从 SDK + 现成 goal 插件推断,未在真 agent 端到端验证;落地前按 `adapters/*/` 注释核对,见 [TESTING.md](TESTING.md)。
+- **Kiro 不支持** —— 它的 Stop hook 是 observe-only、不能 block,做不了 goal mode(官方只有 `PreToolUse` / `UserPromptSubmit` / `PreTaskExec` 能 block)。
+- **状态按项目隔离,不按 session** —— `.goalkeeper/.turns` / `.status` 是项目级。同一项目里同时跑多个 agent / session 会共享轮数与预算;单任务场景不受影响。
+- **`DONE_CMD` = 本地代码执行** —— 它在你自己项目的 `goal.sh` 里,等同本地脚本;别执行不可信的 `goal.sh`。失败输出喂回模型前已截断(`MAX_OUTPUT_CHARS`)防 secret 泄漏。
 - **wrapper 档**每轮重启 agent 进程,靠 `--continue` / session resume 保上下文;比原生钩子重,但对任何 CLI 都通吃。
 
 ## License
