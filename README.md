@@ -37,10 +37,11 @@ GOALKEEPER_PICK=all GOALKEEPER_TARGET=/你的项目 bash ~/goalkeeper/install.sh
 ```bash
 GOAL="把登录功能做完并通过测试"
 DONE_CMD="npm test"      # 完成条件,退出码 0 = 达成。换成你的: pnpm test / pytest -q / make check
-MAX_TURNS=30             # 刹车: 最多自动续多少轮,撞上限转人工
+MAX_TURNS=30             # 刹车1: 最多自动续多少轮
+MAX_SECONDS=0            # 刹车2: 最多跑多少秒(0=不限);长任务建议设,如 7200=2 小时
 ```
 
-然后**正常启动你的 agent 干活**。它每次想停,goalkeeper 跑一次 `DONE_CMD`:没过 → 拦回去喂"继续修",过了或撞 `MAX_TURNS` → 放行。
+然后**正常启动你的 agent 干活**。它每次想停,goalkeeper 跑一次 `DONE_CMD`:没过 → 拦回去喂"继续修",过了或撞预算(轮数 / 时间)→ 放行,并把停因记进 `.goalkeeper/.status`(`complete` / `time_limited` / `turns_limited`)。
 
 ## 支持哪些 agent
 
@@ -59,7 +60,7 @@ MAX_TURNS=30             # 刹车: 最多自动续多少轮,撞上限转人工
 
 ## 原理:一个判定核心 + 三档适配
 
-所有平台共用同一个判定真相源 `.goalkeeper/check-goal.sh`:跑 `DONE_CMD` 看退出码 + 用 `.turns` 文件做 `MAX_TURNS` 刹车。各平台只是**用不同方式把它钩进"agent 想停"那一刻**:
+所有平台共用同一个判定真相源 `.goalkeeper/check-goal.sh`:跑 `DONE_CMD` 看退出码 + `MAX_TURNS`(轮数) / `MAX_SECONDS`(时间)双刹车。各平台只是**用不同方式把它钩进"agent 想停"那一刻**:
 
 - **档 1 · 原生 Stop 钩子**(Claude Code / Kimi / Kiro):agent 的停止钩子直接调 `check-goal.sh`,读它返回的 `{"decision":"block","reason":...}` 决定拦不拦。三家配置载体不同(JSON / TOML / JSON),脚本同一个。
 - **档 2 · 事件插件**(opencode / pi):插件挂 `session.idle` / `agent_end` 事件,`spawn` 一次 `check-goal.sh` 判定,没达成就用各家续轮 API(`client.session.promptAsync()` / `pi.sendUserMessage(.., {deliverAs:"followUp"})`)把"继续修"投回去。
@@ -71,7 +72,7 @@ MAX_TURNS=30             # 刹车: 最多自动续多少轮,撞上限转人工
 2. **判完成** —— 跑 `DONE_CMD` 看退出码(`check-goal.sh`)
 3. **没达成挡回** —— 返回"别停,继续"+ 把"还差什么"喂回去
 4. **钩住想停** —— 这是唯一各平台不一样的一件(Stop hook / idle 事件 / wrapper)
-5. **刹车** —— `MAX_TURNS` / 超时 / 无进展检测,防无限烧钱
+5. **刹车** —— `MAX_TURNS`(轮数)+ `MAX_SECONDS`(时间)双刹车,撞刹车记 `.status` 区分停因(对标 Codex 的 token/时间预算 + 状态机)
 
 换一个 agent 平台,只换第 4 件,其余四件逻辑照搬。
 

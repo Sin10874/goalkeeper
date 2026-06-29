@@ -12,21 +12,31 @@ source "$GK_DIR/goal.sh"
 # 防无限循环靠下面的 MAX_TURNS 刹车,不靠 stop_hook_active;否则只会拦一轮就放手,达不到"不达目的不停手"。
 cat >/dev/null 2>&1 || true
 
-# 刹车:撞续作上限就放行,清计数
+# 计时:第一次被调用时记下开始时间(时间预算的基准)
+[ -f "$GK_DIR/.started" ] || date +%s > "$GK_DIR/.started"
+STARTED="$(cat "$GK_DIR/.started" 2>/dev/null || date +%s)"
+ELAPSED=$(( $(date +%s) - STARTED ))
 COUNT="$(cat "$GK_DIR/.turns" 2>/dev/null || echo 0)"
-if [ "$COUNT" -ge "${MAX_TURNS:-30}" ]; then
-  rm -f "$GK_DIR/.turns"
-  echo "goalkeeper: 撞 ${MAX_TURNS} 轮上限,放行转人工(目标仍未达成)" >&2
-  exit 0
-fi
+clear_state(){ rm -f "$GK_DIR/.turns" "$GK_DIR/.started"; }
 
-# 判完成:跑完成条件命令,退出码 0 = 真达成
+# 判完成最优先:跑完成条件命令,退出码 0 = 真达成
 if eval "${DONE_CMD:-false}" >/dev/null 2>&1; then
-  rm -f "$GK_DIR/.turns"
-  exit 0
+  echo "complete" > "$GK_DIR/.status"; clear_state; exit 0
 fi
 
-# 未达成 -> 拦回 + 把"还差什么"喂回 agent(reason 会进模型上下文)
-echo $((COUNT + 1)) > "$GK_DIR/.turns"
-printf '{"decision":"block","reason":"目标未达成: %s。完成条件「%s」还没通过(已续 %s 轮),继续修,别停。"}\n' \
-  "$GOAL" "$DONE_CMD" "$((COUNT + 1))"
+# 刹车 1 · 时间预算(长任务的主刹车;0 = 不限)
+if [ "${MAX_SECONDS:-0}" -gt 0 ] && [ "$ELAPSED" -ge "${MAX_SECONDS}" ]; then
+  echo "time_limited" > "$GK_DIR/.status"; clear_state
+  echo "goalkeeper: 撞时间预算 ${MAX_SECONDS}s(已跑 ${ELAPSED}s),放行转人工" >&2; exit 0
+fi
+
+# 刹车 2 · 轮数上限
+if [ "$COUNT" -ge "${MAX_TURNS:-30}" ]; then
+  echo "turns_limited" > "$GK_DIR/.status"; clear_state
+  echo "goalkeeper: 撞 ${MAX_TURNS} 轮上限,放行转人工" >&2; exit 0
+fi
+
+# 未达成 + 没撞刹车 -> 拦回,把进度喂回 agent(reason 会进模型上下文)
+echo $((COUNT + 1)) > "$GK_DIR/.turns"; echo "active" > "$GK_DIR/.status"
+printf '{"decision":"block","reason":"目标未达成: %s。完成条件「%s」还没通过(已续 %s 轮 / %ss),继续修,别停。"}\n' \
+  "$GOAL" "$DONE_CMD" "$((COUNT + 1))" "$ELAPSED"

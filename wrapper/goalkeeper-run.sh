@@ -18,11 +18,17 @@ TASK="${1:?用法: goalkeeper-run.sh \"任务描述\"}"
 : "${RESUME_FLAG:=--continue}"
 : "${TURN_TIMEOUT:=1800}"        # 单轮墙钟秒数,防单轮挂死
 : "${NO_PROGRESS_LIMIT:=3}"      # 连续几轮无进展就判卡死
+: "${MAX_SECONDS:=0}"            # 刹车:总墙钟预算(秒,0=不限)
 
-prompt="$TASK"; resume=""; last_fp=""; stale=0
+prompt="$TASK"; resume=""; last_fp=""; stale=0; START_TS=$(date +%s)
 
 for ((t=1; t<=MAX_TURNS; t++)); do
   echo "── goalkeeper 轮 $t/$MAX_TURNS ──" >&2
+
+  # 0) 时间预算:撞总墙钟就停(长任务的主刹车)
+  if [ "$MAX_SECONDS" -gt 0 ] && [ $(( $(date +%s) - START_TS )) -ge "$MAX_SECONDS" ]; then
+    echo "撞时间预算 ${MAX_SECONDS}s,停。" >&2; exit 4
+  fi
 
   # 1) 调 agent 跑一轮(单轮超时保护)。第一轮全新,之后续接 session。
   # shellcheck disable=SC2086
