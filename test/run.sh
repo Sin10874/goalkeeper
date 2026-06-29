@@ -76,6 +76,11 @@ HO="$TMP/ochome"; mkdir -p "$HO"
 PATH="$TMP/ocbin:$PYDIR:/usr/bin:/bin" GOALKEEPER_TARGET="$HO" GOALKEEPER_PICK=1 bash "$ROOT/install.sh" >/dev/null 2>&1
 [ -f "$HO/.opencode/plugins/goalkeeper.js" ] && ok "install → .opencode/plugins/(复数)" || no "opencode 应装到复数 plugins/"
 
+echo "== install 自动推断 DONE_CMD(A 版:不让用户手写)=="
+HN="$TMP/nodehome"; mkdir -p "$HN"; printf '{"scripts":{"test":"jest"}}' > "$HN/package.json"
+PATH="$TMP/bin:$PATH" GOALKEEPER_TARGET="$HN" GOALKEEPER_PICK=1 bash "$ROOT/install.sh" >/dev/null 2>&1
+grep -q 'DONE_CMD="npm test"' "$HN/.goalkeeper/goal.sh" && ok "node 项目 → 自动推断 DONE_CMD=npm test 写进 goal.sh" || no "install 未自动推断 DONE_CMD"
+
 echo
 echo "─────────────────────────────"
 printf '结果: \033[32m%d passed\033[0m, ' "$PASS"

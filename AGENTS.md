@@ -1,50 +1,49 @@
 # 给 AI agent 的 goalkeeper 接入指引
 
-你在帮用户给他的 coding agent 装 goalkeeper —— 让 agent「不达目的不停手」:每次想停先跑一遍完成条件命令,没过就拦回去继续。照下面做。
+goalkeeper = 给**没有原生 goal mode** 的 coding agent 补一个 `/goal`,而且是**跑真命令看退出码**的硬判定(治"agent 自报做完了"的假绿)。你在帮用户接入,照下面做。
+
+## 0. 先判断该不该装
+
+- 用户用 **Claude Code / Codex**:多数情况**劝他用原生 `/goal`**(内建、够用)。只有他明确要"退出码硬把关、别信模型自报"时,才装 goalkeeper。
+- 用户用 **opencode / pi**:这是 goalkeeper 主场,装。
+- **hermes / openclaw / 任意 headless CLI**:装 goalkeeper 的 wrapper 档。
+- Kiro / ZCode:装不了(Kiro 的 Stop hook 不能 block;ZCode 无 CLI),别硬装。
 
 ## 1. 跑安装器
 
-在用户的**项目根目录**:
-
+在用户项目根目录:
 ```bash
 GOALKEEPER_PICK=all GOALKEEPER_TARGET="$PWD" bash <goalkeeper仓库>/install.sh
 ```
+它会:检测本机 agent、装适配、**自动从项目推断 `DONE_CMD` 写进 `.goalkeeper/goal.sh`**(package.json→npm/pnpm test、pyproject→pytest、Cargo→cargo test、Makefile→make…)。
 
-`GOALKEEPER_PICK` 可换成空格分隔的序号(只接入部分平台)。它会检测本机 agent、写 `.goalkeeper/`、给各平台接入。
+## 2. 用 /goal(opencode / pi 主路径)
 
-## 2. 设对 DONE_CMD(最关键的一步)
+在 opencode / pi 里:
+```
+/goal 把登录做完,直到测试通过
+```
+目标写一句自然语言,完成条件 install 已推断好(或 `/goal` 触发时再推断)。**不用手写 `DONE_CMD`。**
 
-编辑 `.goalkeeper/goal.sh`。`DONE_CMD` 必须是一条**能跑出 0/1 的命令**(退出码 0 = 达成),从项目推断:
+推断不准时才手动:编辑 `.goalkeeper/goal.sh` 的 `DONE_CMD`(兜底,非主路径)。
 
-- 有 `package.json` 且含 `scripts.test` → `npm test`(用 pnpm/yarn 的换掉)
-- Python 项目(有 `pyproject.toml`/`pytest.ini`)→ `pytest -q`
-- 有 `Makefile` 且有 `check`/`test` 目标 → `make check`
-- 有 CI 脚本 → 复用它本地能跑的那条
-- 实在没有测试 → 至少用 `<build命令>`(如 `tsc --noEmit` / `cargo build`),别留 `true`
+## 3. 各平台(install 已自动写,你确认即可)
 
-同时把 `GOAL` 写成一句话目标,`MAX_TURNS` 一般保持 30。
-
-## 3. 各平台接入位置(install 已自动写,你确认即可)
-
-| 平台 | 位置 | 备注 |
+| 平台 | 怎么用 | 位置 / 状态 |
 |---|---|---|
-| Claude Code | `.claude/settings.json` → `hooks.Stop`(嵌套 `hooks` 数组) | ✅ 唯一端到端验证过的;扁平写法不触发 |
-| Kimi | **全局** `~/.kimi/config.toml` → `[[hooks]] event="Stop"` | Kimi 不读项目级,install 生成片段需手动追加到全局 |
-| Kiro | ✗ 不支持 | Kiro 的 Stop hook 是 observe-only、不能 block,做不了 goal mode |
-| opencode | `.opencode/plugins/goalkeeper.js`(复数) | 🧪 实验性,续轮 API 待真机核对 |
-| pi | `.pi/extensions/goalkeeper.ts` | 🧪 实验性,`pi -e` 加载 |
-| hermes / openclaw | 无强制续跑钩子 | 改用 `.goalkeeper/goalkeeper-run.sh "任务"`,并在 `goal.sh` 设 `AGENT_CMD` |
-| ZCode | GUI 无 CLI | 用它自带 `/goal`,或改 `ANTHROPIC_BASE_URL` 走 Claude Code |
+| **opencode** | `/goal <一句话>` 命令 | `.opencode/plugins/goalkeeper.js`(🧪 基于 3 份真源码,未真机端到端) |
+| **pi** | `/goal`,或 install 预设 + `agent_end` 续轮 | `.pi/extensions/goalkeeper.ts`(🧪,命令 API 待真机核对) |
+| hermes / openclaw | `.goalkeeper/goalkeeper-run.sh "任务"` | 设 `goal.sh` 的 `AGENT_CMD` |
+| Claude Code | 劝用原生 `/goal`;非要用 goalkeeper 则 `.claude/settings.json` 的 `hooks.Stop` | ✅ 唯一端到端验证过 |
+| Codex / Kimi | 用各自原生 goal | — |
+| Kiro / ZCode | 不支持 | — |
 
 ## 4. 自检
-
 ```bash
 echo '{}' | .goalkeeper/check-goal.sh
 ```
-
-`DONE_CMD` 没过时,应输出 `{"decision":"block","reason":"..."}`;让 `DONE_CMD` 通过后再跑,应无输出、退出码 0。两种都对 = 接好了。
+`DONE_CMD` 没过 → 输出 `{"decision":"block","reason":...}`;通过 → 无输出、退出码 0。两种都对 = 接好了。
 
 ## 心智模型
 
-判定真相源只有一个:`.goalkeeper/check-goal.sh`(跑 `DONE_CMD` 判退出码 + `MAX_TURNS` 刹车)。
-所有平台都指向它,区别只在"用什么钩子在 agent 想停时调用它"。改完成条件 = 改 `goal.sh` 一行,不要去改各平台配置。
+判定真相源 `.goalkeeper/check-goal.sh`:跑 `DONE_CMD` 看退出码(**硬判定,不信模型自报**)+ `MAX_TURNS` / `MAX_SECONDS` 刹车。这是 goalkeeper 和那些"让 agent 自报完成"的 goal 项目(watzon / prevalentWare / willytop8 / Claude Code 官方 /goal)唯一的区别 —— 也是它存在的全部理由。
