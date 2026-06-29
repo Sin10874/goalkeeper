@@ -8,11 +8,9 @@ GK_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck disable=SC1091
 source "$GK_DIR/goal.sh"
 
-# 读 stdin:Claude Code / Kimi 会传 JSON。含 stop_hook_active=true 说明已在续轮循环里,放行防死循环。
-input="$(cat 2>/dev/null || true)"
-case "$input" in
-  *'"stop_hook_active": true'*|*'"stop_hook_active":true'*) exit 0 ;;
-esac
+# 消费 stdin(Claude Code / Kimi 会通过 stdin 传 JSON),但不据此放行 ——
+# 防无限循环靠下面的 MAX_TURNS 刹车,不靠 stop_hook_active;否则只会拦一轮就放手,达不到"不达目的不停手"。
+cat >/dev/null 2>&1 || true
 
 # 刹车:撞续作上限就放行,清计数
 COUNT="$(cat "$GK_DIR/.turns" 2>/dev/null || echo 0)"
