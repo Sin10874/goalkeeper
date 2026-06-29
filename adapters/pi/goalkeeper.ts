@@ -3,7 +3,7 @@
 //       未达成用 sendMessage(.., {triggerTurn:true, deliverAs:"followUp"}) 等 idle 后投回续轮。
 //
 // 装到全局: pi install npm:goalkeeper-pi  或开发期 pi -e ./goalkeeper.ts
-// ⚠ sendUserMessage 的方法签名按现成 pi-goal 推断,落地前核对 —— 见 TESTING.md。
+// ⚠ sendMessage 的方法签名按现成 pi-goal 推断,落地前核对 —— 见 TESTING.md。
 //   参考: https://github.com/code-yeongyu/pi-goal
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
