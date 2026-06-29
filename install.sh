@@ -67,10 +67,12 @@ PY
   say "  ✓ Claude Code: Stop hook → .claude/settings.json(嵌套格式)"
 }
 inject_kimi() {
-  local f="$TARGET/.kimi/config.toml"; mkdir -p "$TARGET/.kimi"; touch "$f"
-  if grep -q "goalkeeper" "$f" 2>/dev/null; then say "  ✓ Kimi: 已接入,跳过"; return; fi
-  { printf '\n# goalkeeper\n[[hooks]]\nevent = "Stop"\ncommand = "%s"\ntimeout = 60\n' "$CHECK"; } >> "$f"
-  say "  ✓ Kimi Code: Stop hook → .kimi/config.toml"
+  # Kimi 只读全局 ~/.kimi/config.toml,且 --config-file 是替换不合并 —— 项目级装了它不读。
+  # 所以只生成 hook 片段 + 提示用户手动追加到全局,不假装项目级生效。
+  local f="$TARGET/.kimi/goalkeeper-hook.toml"; mkdir -p "$TARGET/.kimi"
+  printf '# 追加到全局 ~/.kimi/config.toml(Kimi 不读项目级 config)\n[[hooks]]\nevent = "Stop"\ncommand = "%s"\ntimeout = 60\n' "$CHECK" > "$f"
+  say "  ⚠ Kimi: 已生成 hook 片段 → .kimi/goalkeeper-hook.toml"
+  say "      Kimi 只读全局 config,请手动追加到 ~/.kimi/config.toml(和 model 配置放一起,别覆盖)。"
 }
 inject_kiro() {
   local f="$TARGET/.kiro/agents/goalkeeper.json"; mkdir -p "$TARGET/.kiro/agents"

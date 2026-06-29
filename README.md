@@ -1,5 +1,7 @@
 # goalkeeper
 
+[![test](https://github.com/Sin10874/goalkeeper/actions/workflows/test.yml/badge.svg)](https://github.com/Sin10874/goalkeeper/actions/workflows/test.yml)
+
 > 让任何 coding agent「不达目的不停手」。
 > 它每次想停下,先跑一遍你定的完成条件命令;没过就拦回去继续干,直到真达成或撞刹车。
 
@@ -45,18 +47,25 @@ MAX_SECONDS=0            # 刹车2: 最多跑多少秒(0=不限);长任务建议
 
 ## 支持哪些 agent
 
-| 平台 | 命令 | "想停"钩子 | 接入位置 | 自动接入 |
-|---|---|---|---|---|
-| Claude Code | `claude` | `Stop` hook | `.claude/settings.json` | ✓ |
-| Kimi Code | `kimi` | `Stop` hook | `.kimi/config.toml` | ✓ |
-| Kiro | `kiro-cli` | `stop` hook | `.kiro/agents/goalkeeper.json` | ✓ |
-| opencode | `opencode` | `session.idle` 事件 | `.opencode/plugin/goalkeeper.js` | ✓ |
-| pi | `pi` | `agent_end` 事件 | `.pi/extensions/goalkeeper.ts` | ✓(需 `pi -e` 加载) |
-| openclaw | `openclaw` | 无强制续跑钩子 | wrapper | 用 `goalkeeper-run.sh` |
-| hermes | `hermes` | 只能观察、不能拦 | wrapper | 用 `goalkeeper-run.sh` |
-| ZCode | (GUI,无 CLI) | 自带 `/goal` | — | 用它自带的,或走 Claude Code 路线 |
+诚实标注验证程度 —— **别把"适配代码写了"当成"验证过"**:
 
-> **ZCode** 是桌面 GUI,接不进外部 hook。两条路:直接用它**自带的 `/goal`**;或改用 GLM 驱动 Claude Code(设 `ANTHROPIC_BASE_URL=https://api.z.ai/api/anthropic`),那样复用 Claude Code 的接入。
+| 平台 | 档 | 接入位置 | 验证状态 |
+|---|---|---|---|
+| **Claude Code** | stdout-JSON hook | `.claude/settings.json` | ✅ **端到端真验证**(`claude -p` 跑过:拦回续轮 + 刹车全过) |
+| Kimi Code | stdout-JSON hook | **全局** `~/.kimi/config.toml`(见下) | ⚙️ 判定逻辑同 CC,但 Kimi CLI 未端到端实测 |
+| Kiro | stdout-JSON hook | `.kiro/agents/goalkeeper.json` | ⚙️ 逻辑同 CC;CLI 未实测,且 Kiro 有吞行 bug([#4183](https://github.com/kirodotdev/Kiro/issues/4183)) |
+| opencode | 事件插件 | `.opencode/plugin/goalkeeper.js` | 🧪 **实验性**:续轮 API(`promptAsync`)从社区推断,**未在真 opencode 验证** |
+| pi | 事件插件 | `.pi/extensions/goalkeeper.ts` | 🧪 **实验性**:`sendUserMessage` 同上,**未在真 pi 验证** |
+| openclaw / hermes | wrapper | `goalkeeper-run.sh` | ⚙️ wrapper 逻辑实测(mock agent);真 agent 未端到端 |
+| ZCode | — | (GUI,无 CLI) | 用它自带 `/goal`,或走 Claude Code 路线 |
+
+> 图例:✅ 在真 agent 上端到端跑通 · ⚙️ 判定核心实测、但未在该 agent 端到端 · 🧪 适配代码已写、关键 API 未验证。
+>
+> **目前只有 Claude Code 是 ✅。** 其余欢迎你在自己的 agent 上验证后提 PR 升级标记 —— 怎么验见 [TESTING.md](TESTING.md)。
+
+**两个已知问题(诚实摆出来):**
+- **Kimi 只读全局 `~/.kimi/config.toml`**,且 `--config-file` 是替换不合并 —— install 装的项目级 `.kimi/config.toml` 它不读。用 Kimi 需手动把 hook 段加到全局 config(和你的 model 配置放一起)。install 会打印提示。
+- **ZCode** 是桌面 GUI,接不进外部 hook:用它自带 `/goal`,或改 `ANTHROPIC_BASE_URL=https://api.z.ai/api/anthropic` 走 Claude Code 复用接入。
 
 ## 原理:一个判定核心 + 三档适配
 

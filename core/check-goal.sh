@@ -18,6 +18,8 @@ STARTED="$(cat "$GK_DIR/.started" 2>/dev/null || date +%s)"
 ELAPSED=$(( $(date +%s) - STARTED ))
 COUNT="$(cat "$GK_DIR/.turns" 2>/dev/null || echo 0)"
 clear_state(){ rm -f "$GK_DIR/.turns" "$GK_DIR/.started"; }
+# JSON 字符串转义:防 GOAL/DONE_CMD 里的 " \ 换行 破坏 block JSON(顺序:先反斜杠)
+json_escape(){ local s=$1; s=${s//\\/\\\\}; s=${s//\"/\\\"}; s=${s//$'\r'/}; s=${s//$'\n'/\\n}; s=${s//$'\t'/\\t}; printf '%s' "$s"; }
 
 # 判完成最优先:跑完成条件命令,退出码 0 = 真达成
 if eval "${DONE_CMD:-false}" >/dev/null 2>&1; then
@@ -38,5 +40,5 @@ fi
 
 # 未达成 + 没撞刹车 -> 拦回,把进度喂回 agent(reason 会进模型上下文)
 echo $((COUNT + 1)) > "$GK_DIR/.turns"; echo "active" > "$GK_DIR/.status"
-printf '{"decision":"block","reason":"目标未达成: %s。完成条件「%s」还没通过(已续 %s 轮 / %ss),继续修,别停。"}\n' \
-  "$GOAL" "$DONE_CMD" "$((COUNT + 1))" "$ELAPSED"
+reason="目标未达成: ${GOAL}。完成条件「${DONE_CMD}」还没通过(已续 $((COUNT + 1)) 轮 / ${ELAPSED}s),继续修,别停。"
+printf '{"decision":"block","reason":"%s"}\n' "$(json_escape "$reason")"

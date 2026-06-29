@@ -1,0 +1,15 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: ShellCheck
+        run: shellcheck -S warning core/check-goal.sh core/goal.sh wrapper/goalkeeper-run.sh install.sh test/run.sh || true
+      - name: Run tests
+        run: bash test/run.sh
