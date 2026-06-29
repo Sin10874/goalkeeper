@@ -31,8 +31,8 @@ export default function (pi: any) {
       // pi-goal 参考实现用 sendMessage(...{ triggerTurn, deliverAs:"followUp" });旧版回退 sendUserMessage
       if (typeof pi.sendMessage === "function") {
         pi.sendMessage({ content: decision.reason, display: true }, { deliverAs: "followUp", triggerTurn: true });
-      } else {
-        pi.sendUserMessage(decision.reason, { deliverAs: "followUp" });
+      } else if (typeof pi.sendUserMessage === "function") {
+        pi.sendUserMessage(decision.reason, { deliverAs: "followUp" }); // 旧版 pi 回退
       }
     } catch (e: any) { console.error("[goalkeeper] 续轮失败(API 签名可能不符,见 TESTING.md):", (e && e.message) || e); }
   });
