@@ -55,7 +55,7 @@ MAX_SECONDS=0            # 刹车2: 最多跑多少秒(0=不限);长任务建议
 | Kimi Code | stdout-JSON hook | **全局** `~/.kimi/config.toml`(见下) | ⚙️ 判定逻辑同 CC,但 Kimi CLI 未端到端实测 |
 | Kiro | ✗ 不支持 | — | **Kiro 的 Stop hook 是 observe-only、不能 block**,做不了 goal mode(只有 PreToolUse 等能拦);有 headless 可走 wrapper 档 |
 | opencode | 事件插件 | `.opencode/plugins/goalkeeper.js` | 🧪 **实验性**:续轮 API 从 SDK 推断,**未在真 opencode 验证** |
-| pi | 事件插件 | `.pi/extensions/goalkeeper.ts` | 🧪 **实验性**:`sendUserMessage` 同上,**未在真 pi 验证** |
+| pi | 事件插件 | `.pi/extensions/goalkeeper.ts` | 🧪 **实验性**:`sendMessage` 同上,**未在真 pi 验证** |
 | openclaw / hermes | wrapper | `goalkeeper-run.sh` | ⚙️ wrapper 逻辑实测(mock agent);真 agent 未端到端 |
 | ZCode | — | (GUI,无 CLI) | 用它自带 `/goal`,或走 Claude Code 路线 |
 
@@ -94,7 +94,7 @@ MAX_SECONDS=0            # 刹车2: 最多跑多少秒(0=不限);长任务建议
 - **档 2(opencode / pi)是实验性** —— 续轮 API 的方法签名从 SDK + 现成 goal 插件推断,未在真 agent 端到端验证;落地前按 `adapters/*/` 注释核对,见 [TESTING.md](TESTING.md)。
 - **Kiro 不支持** —— 它的 Stop hook 是 observe-only、不能 block,做不了 goal mode(官方只有 `PreToolUse` / `UserPromptSubmit` / `PreTaskExec` 能 block)。
 - **状态按项目隔离,不按 session** —— `.goalkeeper/.turns` / `.status` 是项目级。同一项目里同时跑多个 agent / session 会共享轮数与预算;单任务场景不受影响。
-- **`DONE_CMD` = 本地代码执行** —— 它在你自己项目的 `goal.sh` 里,等同本地脚本;别执行不可信的 `goal.sh`。失败输出喂回模型前已截断(`MAX_OUTPUT_CHARS`)防 secret 泄漏。
+- **`DONE_CMD` = 本地代码执行** —— 它在你自己项目的 `goal.sh` 里,等同本地脚本;别执行不可信的 `goal.sh`。失败输出喂回模型前已截断(`MAX_OUTPUT_CHARS`),缩小 token / secret 泄漏面(截断,非完整脱敏)。
 - **wrapper 档**每轮重启 agent 进程,靠 `--continue` / session resume 保上下文;比原生钩子重,但对任何 CLI 都通吃。
 
 ## License

@@ -23,14 +23,17 @@ TASK="${1:?用法: goalkeeper-run.sh \"任务描述\"}"
 # 超时命令:优先 GNU timeout/gtimeout;macOS 默认两者都没有,guard 里用纯 bash 兜底
 TIMEOUT_BIN="$(command -v timeout || command -v gtimeout || true)"
 
-# 超时跑一条命令:有 timeout 命令就用;没有就纯 bash 后台 + watcher kill(macOS 兜底,不再裸跑卡死)
+# 递归杀整棵进程树(与 check-goal 一致),纯 bash 兜底覆盖深层子/孙进程
+kill_tree(){ local p=$1 sig=$2 c; for c in $(pgrep -P "$p" 2>/dev/null); do kill_tree "$c" "$sig"; done; kill "-$sig" "$p" 2>/dev/null; }
+# 超时跑一条命令:有 timeout 命令就用;没有就纯 bash 后台 + 整树 kill(macOS 兜底,不再裸跑卡死)
 guard(){
   local secs=$1; shift
   if [ -n "$TIMEOUT_BIN" ]; then "$TIMEOUT_BIN" "$secs" "$@"; return $?; fi
   "$@" & local pid=$!
-  ( sleep "$secs"; kill -TERM "$pid" 2>/dev/null; sleep 2; kill -KILL "$pid" 2>/dev/null ) >/dev/null 2>&1 & local w=$!
+  ( sleep "$secs"; kill_tree "$pid" TERM; sleep 2; kill_tree "$pid" KILL ) >/dev/null 2>&1 & local w=$!
   wait "$pid" 2>/dev/null; local rc=$?
   kill "$w" 2>/dev/null; wait "$w" 2>/dev/null
+  [ "$rc" -gt 128 ] && rc=124   # 超时被信号杀统一成 124,和 GNU timeout 对齐
   return "$rc"
 }
 
@@ -51,10 +54,10 @@ for ((t=1; t<=MAX_TURNS; t++)); do
   [ "$arc" -ne 0 ] && { echo "agent 非正常退出(rc=$arc:认证失败/命令不存在/崩溃?),停,别空转误判。" >&2; exit 5; }
   resume="$RESUME_FLAG"
 
-  # 2) 跑完成条件命令(超时包住)。写临时文件再 tail 取尾部:既不爆内存,又不会被 head 管道的
-  #    SIGPIPE 把"成功但输出大"的命令退出码打成 141 而误判未达成。
+  # 2) 跑完成条件命令(超时包住)。写临时文件再 tail 取尾部:不爆内存,也不会被 head 管道的 SIGPIPE
+  #    把"成功但输出大"的命令退出码打成 141。ulimit -f 给临时文件封顶,防输出洪泛打满 /tmp。
   _o="$(mktemp "${TMPDIR:-/tmp}/gk.XXXXXX")"
-  guard "$DONE_TIMEOUT" bash -c "$DONE_CMD" >"$_o" 2>&1; rc=$?
+  ( ulimit -f 4096 2>/dev/null; guard "$DONE_TIMEOUT" bash -c "$DONE_CMD" >"$_o" 2>&1 ); rc=$?
   out="$(tail -c 200000 "$_o")"; rm -f "$_o"
   if [ "$rc" -eq 0 ]; then echo "✅ 达成(完成条件退出码 0),共 $t 轮。" >&2; exit 0; fi
 
