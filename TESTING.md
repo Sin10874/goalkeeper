@@ -32,7 +32,7 @@ bash test/run.sh
 ### 各 agent 的坑(已知,验证时注意)
 
 - **Kimi**:只读全局 `~/.kimi/config.toml`,`--config-file` 是替换不合并。验证时把 hook 段加到全局 config(和 model 配置一起),再用 `kimi --print -p "..."`。
-- **opencode / pi**:续轮 API(`client.session.promptAsync` / `pi.sendUserMessage`)从社区插件推断,需在真 opencode / pi 上核对方法签名(见 `adapters/*/` 注释里的参考 repo)。
+- **opencode / pi**:续轮 API(`client.session.prompt` / `pi.sendMessage`)从 SDK + 社区插件推断,需在真 opencode / pi 上核对方法签名(见 `adapters/*/` 注释里的参考 repo)。
 - **Kiro**:stop hook 有吞响应最后一行的 bug([#4183](https://github.com/kirodotdev/Kiro/issues/4183))。
 
 **验证通过某个平台后,欢迎提 PR** 把 README 支持表里它的标记从 🧪 / ⚙️ 升到 ✅,附上你的验证命令和 `calls.log` 结果。

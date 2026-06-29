@@ -38,6 +38,13 @@ printf '%s\n' 'GOAL="带 \"引号\" 和 \\反斜杠 的目标"' 'DONE_CMD="grep 
 out=$(run)
 if printf '%s' "$out" | python3 -c "import sys,json;json.load(sys.stdin)" 2>/dev/null; then ok "含引号/反斜杠 → 仍是合法 JSON"; else no "JSON 转义(输出: $out)"; fi
 
+echo "== JSON 控制字符全覆盖(\\v \\x01 \\x1f 等 C0)=="
+rm -rf "$TMP/p"; mkdir -p "$TMP/p/.goalkeeper"
+cp "$ROOT/core/check-goal.sh" "$TMP/p/.goalkeeper/check-goal.sh"; chmod +x "$TMP/p/.goalkeeper/check-goal.sh"
+printf 'GOAL=$(printf "a\\013b\\001c\\037d")\nDONE_CMD="false"\nMAX_TURNS=9\nMAX_SECONDS=0\n' > "$TMP/p/.goalkeeper/goal.sh"
+out=$(run)
+if printf '%s' "$out" | python3 -c "import sys,json;json.load(sys.stdin)" 2>/dev/null; then ok "含 C0 控制字符 → 仍合法 JSON"; else no "JSON 控制字符未全覆盖"; fi
+
 echo "== 防'只拦一轮'回归(stop_hook_active 不应放行)=="
 setup '"false"' 2 0
 for _ in 1 2 3; do printf '{"stop_hook_active":true}' | ( cd "$TMP/p" && ./.goalkeeper/check-goal.sh ) >/dev/null 2>&1; done

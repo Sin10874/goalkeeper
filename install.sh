@@ -54,7 +54,7 @@ else printf "给哪些平台开启 goal mode?(空格分隔序号,all=全部): ";
 mkdir -p "$GKDIR" || { say "无法创建 $GKDIR,中止。"; exit 1; }
 must_cp "$GK_SRC/core/check-goal.sh"        "$GKDIR/check-goal.sh"     && chmod +x "$GKDIR/check-goal.sh" || { say "判定核心拷贝失败,中止。"; exit 1; }
 must_cp "$GK_SRC/wrapper/goalkeeper-run.sh" "$GKDIR/goalkeeper-run.sh" && chmod +x "$GKDIR/goalkeeper-run.sh" || { say "wrapper 拷贝失败,中止。"; exit 1; }
-if [ ! -f "$GKDIR/goal.sh" ]; then cp "$GK_SRC/core/goal.sh" "$GKDIR/goal.sh"; say "已写目标配置: .goalkeeper/goal.sh"; else say "保留已有 .goalkeeper/goal.sh"; fi
+if [ ! -f "$GKDIR/goal.sh" ]; then must_cp "$GK_SRC/core/goal.sh" "$GKDIR/goal.sh" && say "已写目标配置: .goalkeeper/goal.sh" || { say "goal.sh 拷贝失败,中止。"; exit 1; }; else say "保留已有 .goalkeeper/goal.sh"; fi
 CHECK="$GKDIR/check-goal.sh"
 
 # ── 4) 各平台接入函数 ─────────────────────────────────────────

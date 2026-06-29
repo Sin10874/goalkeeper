@@ -72,7 +72,7 @@ MAX_SECONDS=0            # 刹车2: 最多跑多少秒(0=不限);长任务建议
 所有平台共用同一个判定真相源 `.goalkeeper/check-goal.sh`:跑 `DONE_CMD` 看退出码 + `MAX_TURNS`(轮数) / `MAX_SECONDS`(时间)双刹车。各平台只是**用不同方式把它钩进"agent 想停"那一刻**:
 
 - **档 1 · 原生 Stop 钩子**(Claude Code / Kimi):agent 的停止钩子直接调 `check-goal.sh`,读它返回的 `{"decision":"block","reason":...}` 决定拦不拦。配置载体不同(JSON / TOML),脚本同一个。(Kiro 的 Stop hook 是 observe-only、不能 block,做不了这件事 —— 见上表。)
-- **档 2 · 事件插件**(opencode / pi):插件挂 `session.idle` / `agent_end` 事件,`spawn` 一次 `check-goal.sh` 判定,没达成就用各家续轮 API(`client.session.promptAsync()` / `pi.sendUserMessage(.., {deliverAs:"followUp"})`)把"继续修"投回去。
+- **档 2 · 事件插件**(opencode / pi):插件挂 `session.idle` / `agent_end` 事件,`spawn` 一次 `check-goal.sh` 判定,没达成就用各家续轮 API(`client.session.prompt()` / `pi.sendMessage(.., {triggerTurn:true, deliverAs:"followUp"})`)把"继续修"投回去。
 - **档 3 · 通用 wrapper**(hermes / openclaw / 任意 headless CLI):它们没有"强制续跑"的钩子,改用 `.goalkeeper/goalkeeper-run.sh "任务"` 在**进程外**包一个循环:调 agent 跑一轮 → 跑 `DONE_CMD` → 没过把失败输出当下一轮 prompt 再调,直到达成或撞刹车。
 
 ### 五要件(给任何 agent 写 goal mode,都靠这五件)

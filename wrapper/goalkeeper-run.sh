@@ -18,7 +18,7 @@ TASK="${1:?用法: goalkeeper-run.sh \"任务描述\"}"
 : "${DONE_TIMEOUT:=120}"           # 单次 DONE_CMD 最多跑多久,防卡死
 : "${NO_PROGRESS_LIMIT:=3}"        # 连续几轮无进展就判卡死
 : "${MAX_SECONDS:=0}"              # 总墙钟预算(0=不限)
-: "${MAX_OUTPUT_CHARS:=4000}"      # 喂回模型的失败输出上限,防 token / secret 泄漏
+: "${MAX_OUTPUT_CHARS:=4000}"      # 喂回模型的失败输出上限,缩小 token / secret 泄漏面(截断,非完整脱敏)
 
 # 超时命令:优先 GNU timeout/gtimeout;macOS 默认两者都没有,guard 里用纯 bash 兜底
 TIMEOUT_BIN="$(command -v timeout || command -v gtimeout || true)"
@@ -51,8 +51,11 @@ for ((t=1; t<=MAX_TURNS; t++)); do
   [ "$arc" -ne 0 ] && { echo "agent 非正常退出(rc=$arc:认证失败/命令不存在/崩溃?),停,别空转误判。" >&2; exit 5; }
   resume="$RESUME_FLAG"
 
-  # 2) 跑完成条件命令(超时包住),捕获输出 + 退出码(head -c 限流防超大输出爆内存)
-  out="$(guard "$DONE_TIMEOUT" bash -c "$DONE_CMD" 2>&1 | head -c 200000)"; rc=${PIPESTATUS[0]}
+  # 2) 跑完成条件命令(超时包住)。写临时文件再 tail 取尾部:既不爆内存,又不会被 head 管道的
+  #    SIGPIPE 把"成功但输出大"的命令退出码打成 141 而误判未达成。
+  _o="$(mktemp "${TMPDIR:-/tmp}/gk.XXXXXX")"
+  guard "$DONE_TIMEOUT" bash -c "$DONE_CMD" >"$_o" 2>&1; rc=$?
+  out="$(tail -c 200000 "$_o")"; rm -f "$_o"
   if [ "$rc" -eq 0 ]; then echo "✅ 达成(完成条件退出码 0),共 $t 轮。" >&2; exit 0; fi
 
   # 3) 无进展刹车:完成命令输出 + 代码状态指纹连续不变 -> 判卡死

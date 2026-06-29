@@ -19,19 +19,19 @@ ELAPSED=$(( $(date +%s) - STARTED ))
 COUNT="$(cat "$GK_DIR/.turns" 2>/dev/null || echo 0)"
 clear_state(){ rm -f "$GK_DIR/.turns" "$GK_DIR/.started"; }
 # JSON 字符串转义:防 GOAL/DONE_CMD 里的 " \ 换行 破坏 block JSON(顺序:先反斜杠)
-json_escape(){ local s=$1; s=${s//\\/\\\\}; s=${s//\"/\\\"}; s=${s//$'\b'/\\b}; s=${s//$'\f'/\\f}; s=${s//$'\r'/\\r}; s=${s//$'\n'/\\n}; s=${s//$'\t'/\\t}; printf '%s' "$s"; }
+json_escape(){ local s=$1; s=${s//\\/\\\\}; s=${s//\"/\\\"}; s=${s//$'\b'/\\b}; s=${s//$'\f'/\\f}; s=${s//$'\r'/\\r}; s=${s//$'\n'/\\n}; s=${s//$'\t'/\\t}; s=${s//$'\v'/\\u000b}; printf '%s' "$s" | tr -d '\000-\010\016-\037\177'; }
 
 # 跑完成条件命令 —— 用超时包住,否则 DONE_CMD 卡死会让整个 hook 挂死、时间预算永不放行。
 # 安全边界:DONE_CMD 是你在自己项目 .goalkeeper/goal.sh 里写的,等同本地脚本;别执行不可信的 goal.sh。
 TIMEOUT_BIN="$([ -n "${GK_FORCE_BASH_TIMEOUT:-}" ] && true || command -v timeout || command -v gtimeout || true)"
-# 超时跑一条命令:优先 GNU timeout/gtimeout;macOS 默认两者都没有,用纯 bash 后台 + watcher kill 兜底。
+# 递归杀整棵进程树(pgrep -P 列子进程,深度优先),纯 bash 兜底时覆盖深层子/孙进程
+kill_tree(){ local p=$1 sig=$2 c; for c in $(pgrep -P "$p" 2>/dev/null); do kill_tree "$c" "$sig"; done; kill "-$sig" "$p" 2>/dev/null; }
+# 超时跑一条命令:优先 GNU timeout/gtimeout;macOS 默认都没有,用纯 bash 后台 + 整树 kill 兜底。
 run_timed(){
   local secs=$1; shift
   if [ -n "$TIMEOUT_BIN" ]; then "$TIMEOUT_BIN" "$secs" "$@"; return $?; fi
   "$@" & local pid=$!
-  # 纯 bash 兜底:超时杀子进程 + 其直接子(pkill -P);更深的进程树请装 coreutils 用 timeout
-  ( sleep "$secs"; kill -TERM "$pid" 2>/dev/null; pkill -TERM -P "$pid" 2>/dev/null
-    sleep 2; kill -KILL "$pid" 2>/dev/null; pkill -KILL -P "$pid" 2>/dev/null ) >/dev/null 2>&1 & local w=$!
+  ( sleep "$secs"; kill_tree "$pid" TERM; sleep 2; kill_tree "$pid" KILL ) >/dev/null 2>&1 & local w=$!
   wait "$pid" 2>/dev/null; local rc=$?
   kill "$w" 2>/dev/null; wait "$w" 2>/dev/null
   [ "$rc" -gt 128 ] && rc=124   # 被信号杀(超时)统一成 124,和 GNU timeout 对齐
