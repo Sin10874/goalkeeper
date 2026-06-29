@@ -28,11 +28,11 @@ GOALKEEPER_PICK=all GOALKEEPER_TARGET="$PWD" bash <goalkeeper仓库>/install.sh
 
 | 平台 | 位置 | 备注 |
 |---|---|---|
-| Claude Code | `.claude/settings.json` → `hooks.Stop`(嵌套 `hooks` 数组) | 扁平写法不触发 |
-| Kimi | `.kimi/config.toml` → `[[hooks]] event="Stop"` | |
-| Kiro | `.kiro/agents/goalkeeper.json` → `hooks.stop` | 启动加 `--agent goalkeeper` |
-| opencode | `.opencode/plugin/goalkeeper.js` | 启动自动加载 |
-| pi | `.pi/extensions/goalkeeper.ts` | 提醒用户 `pi -e .pi/extensions/goalkeeper.ts` 加载 |
+| Claude Code | `.claude/settings.json` → `hooks.Stop`(嵌套 `hooks` 数组) | ✅ 唯一端到端验证过的;扁平写法不触发 |
+| Kimi | **全局** `~/.kimi/config.toml` → `[[hooks]] event="Stop"` | Kimi 不读项目级,install 生成片段需手动追加到全局 |
+| Kiro | ✗ 不支持 | Kiro 的 Stop hook 是 observe-only、不能 block,做不了 goal mode |
+| opencode | `.opencode/plugins/goalkeeper.js`(复数) | 🧪 实验性,续轮 API 待真机核对 |
+| pi | `.pi/extensions/goalkeeper.ts` | 🧪 实验性,`pi -e` 加载 |
 | hermes / openclaw | 无强制续跑钩子 | 改用 `.goalkeeper/goalkeeper-run.sh "任务"`,并在 `goal.sh` 设 `AGENT_CMD` |
 | ZCode | GUI 无 CLI | 用它自带 `/goal`,或改 `ANTHROPIC_BASE_URL` 走 Claude Code |
 

@@ -51,8 +51,8 @@ for ((t=1; t<=MAX_TURNS; t++)); do
   [ "$arc" -ne 0 ] && { echo "agent 非正常退出(rc=$arc:认证失败/命令不存在/崩溃?),停,别空转误判。" >&2; exit 5; }
   resume="$RESUME_FLAG"
 
-  # 2) 跑完成条件命令(超时包住),捕获输出 + 退出码
-  out="$(guard "$DONE_TIMEOUT" bash -c "$DONE_CMD" 2>&1)"; rc=$?
+  # 2) 跑完成条件命令(超时包住),捕获输出 + 退出码(head -c 限流防超大输出爆内存)
+  out="$(guard "$DONE_TIMEOUT" bash -c "$DONE_CMD" 2>&1 | head -c 200000)"; rc=${PIPESTATUS[0]}
   if [ "$rc" -eq 0 ]; then echo "✅ 达成(完成条件退出码 0),共 $t 轮。" >&2; exit 0; fi
 
   # 3) 无进展刹车:完成命令输出 + 代码状态指纹连续不变 -> 判卡死
@@ -63,7 +63,7 @@ for ((t=1; t<=MAX_TURNS; t++)); do
   else stale=0; fi
   last_fp="$fp"
 
-  # 4) 把失败原因(截断,防 token / secret 泄漏)当下一轮 prompt 喂回
+  # 4) 把失败原因(截断到末 N 字符,缩小 token / secret 泄漏面;注意:这是截断不是完整脱敏)当下一轮 prompt 喂回
   clip="$(printf '%s' "$out" | tail -c "$MAX_OUTPUT_CHARS")"
   prompt="完成条件 \`$DONE_CMD\` 仍未通过(退出码 $rc)。失败输出(末 ${MAX_OUTPUT_CHARS} 字符):
 $clip

@@ -57,6 +57,11 @@ setup '"sleep 30"' 9 0; echo 'DONE_TIMEOUT=2' >> "$TMP/p/.goalkeeper/goal.sh"
 s=$(date +%s); run >/dev/null; el=$(( $(date +%s) - s ))
 [ "$el" -lt 12 ] && ok "DONE_CMD 卡死被超时打断(${el}s,没卡满 30s)" || no "DONE_CMD 超时未生效(${el}s)"
 
+echo "== 纯 bash 超时 fallback(强制无 timeout 命令,覆盖 macOS/CI 路径)=="
+setup '"sleep 30"' 9 0; echo 'DONE_TIMEOUT=2' >> "$TMP/p/.goalkeeper/goal.sh"
+s=$(date +%s); ( cd "$TMP/p" && GK_FORCE_BASH_TIMEOUT=1 ./.goalkeeper/check-goal.sh </dev/null >/dev/null 2>&1 ); el=$(( $(date +%s) - s ))
+[ "$el" -lt 12 ] && ok "强制 bash fallback 也能超时打断(${el}s)" || no "bash fallback 超时(${el}s)"
+
 echo "== install opencode 目录是复数 plugins/(防回归 plugin/)=="
 PYDIR="$(dirname "$(command -v python3 || echo /usr/bin/python3)")"
 mkdir -p "$TMP/ocbin"; printf '#!/bin/sh\nexit 0\n' > "$TMP/ocbin/opencode"; chmod +x "$TMP/ocbin/opencode"

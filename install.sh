@@ -17,6 +17,8 @@ hr()  { printf '%s\n' "───────────────────
 need_py(){ [ -n "$PY" ] && return 0; say "  ✗ $1: 需要 python3 合并配置但本机没装,跳过(装 python3 后重跑)"; return 1; }
 # 转义路径,防其中的 " \ 破坏 JSON/TOML 字符串
 esc(){ local s=$1; s=${s//\\/\\\\}; s=${s//\"/\\\"}; printf '%s' "$s"; }
+# 拷贝并验证目标确实生成,失败返回非0(给安装做 fail-fast)
+must_cp(){ cp "$1" "$2" 2>/dev/null && [ -e "$2" ]; }
 
 hr; say "goalkeeper · 让 coding agent 不达目的不停手"; say "安装到项目: $TARGET"; hr
 
@@ -50,9 +52,8 @@ else printf "给哪些平台开启 goal mode?(空格分隔序号,all=全部): ";
 
 # ── 3) 写公共判定核心 + 目标配置(失败即中止)──────────────────
 mkdir -p "$GKDIR" || { say "无法创建 $GKDIR,中止。"; exit 1; }
-cp "$GK_SRC/core/check-goal.sh"        "$GKDIR/check-goal.sh"     && chmod +x "$GKDIR/check-goal.sh"
-cp "$GK_SRC/wrapper/goalkeeper-run.sh" "$GKDIR/goalkeeper-run.sh" && chmod +x "$GKDIR/goalkeeper-run.sh"
-[ -x "$GKDIR/check-goal.sh" ] || { say "判定核心拷贝失败,中止。"; exit 1; }
+must_cp "$GK_SRC/core/check-goal.sh"        "$GKDIR/check-goal.sh"     && chmod +x "$GKDIR/check-goal.sh" || { say "判定核心拷贝失败,中止。"; exit 1; }
+must_cp "$GK_SRC/wrapper/goalkeeper-run.sh" "$GKDIR/goalkeeper-run.sh" && chmod +x "$GKDIR/goalkeeper-run.sh" || { say "wrapper 拷贝失败,中止。"; exit 1; }
 if [ ! -f "$GKDIR/goal.sh" ]; then cp "$GK_SRC/core/goal.sh" "$GKDIR/goal.sh"; say "已写目标配置: .goalkeeper/goal.sh"; else say "保留已有 .goalkeeper/goal.sh"; fi
 CHECK="$GKDIR/check-goal.sh"
 
@@ -71,7 +72,12 @@ if not exists:
     stop.append({"hooks":[{"type":"command","command":cmd}]})
 json.dump(d,open(f,"w"),ensure_ascii=False,indent=2)
 PY
-  if "$PY" -c "import json;json.load(open('$f'))" 2>/dev/null; then say "  ✓ Claude Code: Stop hook → .claude/settings.json(嵌套格式)"; else say "  ✗ Claude Code: settings.json 写出非法,已备份在 $f.bak.goalkeeper"; fi
+  local mrc=$?
+  if [ "$mrc" -ne 0 ]; then say "  ✗ Claude Code: 合并 settings.json 失败(python rc=$mrc),已备份 $f.bak.goalkeeper"; return; fi
+  # argv 精确验证 hook 真写入(不只验 JSON 可读)
+  if "$PY" -c "import json,sys;d=json.load(open(sys.argv[1]));c=sys.argv[2];sys.exit(0 if any(h.get('command')==c for g in d.get('hooks',{}).get('Stop',[]) for h in (g.get('hooks') or [])) else 1)" "$f" "$CHECK" 2>/dev/null; then
+    say "  ✓ Claude Code: Stop hook → .claude/settings.json(已校验写入)"
+  else say "  ✗ Claude Code: hook 未确认写入,检查 $f.bak.goalkeeper"; fi
 }
 inject_kimi() {
   # Kimi 只读全局 ~/.kimi/config.toml,--config-file 是替换不合并 —— 项目级它不读,只生成片段+提示。
@@ -88,13 +94,15 @@ inject_kiro() {
 }
 inject_opencode() {
   mkdir -p "$TARGET/.opencode/plugins"   # 官方加载目录是复数 plugins/
-  cp "$GK_SRC/adapters/opencode/goalkeeper.js" "$TARGET/.opencode/plugins/goalkeeper.js"
-  say "  🧪 opencode: 插件 → .opencode/plugins/goalkeeper.js(实验性,续轮 API 待真机核对,见 TESTING.md)"
+  must_cp "$GK_SRC/adapters/opencode/goalkeeper.js" "$TARGET/.opencode/plugins/goalkeeper.js" \
+    && say "  🧪 opencode: 插件 → .opencode/plugins/goalkeeper.js(实验性,续轮 API 待真机核对,见 TESTING.md)" \
+    || say "  ✗ opencode: 插件拷贝失败"
 }
 inject_pi() {
   mkdir -p "$TARGET/.pi/extensions"
-  cp "$GK_SRC/adapters/pi/goalkeeper.ts" "$TARGET/.pi/extensions/goalkeeper.ts"
-  say "  🧪 pi: 扩展 → .pi/extensions/goalkeeper.ts(实验性,用 \`pi -e\` 加载,API 待核对)"
+  must_cp "$GK_SRC/adapters/pi/goalkeeper.ts" "$TARGET/.pi/extensions/goalkeeper.ts" \
+    && say "  🧪 pi: 扩展 → .pi/extensions/goalkeeper.ts(实验性,用 \`pi -e\` 加载,API 待核对)" \
+    || say "  ✗ pi: 扩展拷贝失败"
 }
 wrapper_note() {
   say "  ✓ $1: 走 wrapper → .goalkeeper/goalkeeper-run.sh \"任务描述\"(先在 goal.sh 设 AGENT_CMD)"

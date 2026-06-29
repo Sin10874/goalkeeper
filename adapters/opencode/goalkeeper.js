@@ -12,9 +12,12 @@ import { join } from "node:path";
 export const Goalkeeper = async ({ client, directory }) => ({
   // opencode 是一个 event 处理器,内部按 event.type 分发(不是顶层 "session.idle" 键)
   event: async ({ event }) => {
-    if (!event || event.type !== "session.idle") return;
+    // 兼容两种 idle 形态:session.idle 事件,以及 session.status 里 status.type==="idle"
+    const isIdle = event?.type === "session.idle"
+      || (event?.type === "session.status" && event?.properties?.status?.type === "idle");
+    if (!isIdle) return;
     const dir = directory || process.cwd();
-    const sessionID = event?.properties?.sessionID || event?.sessionID;
+    const sessionID = event?.properties?.sessionID || event?.properties?.info?.sessionID || event?.sessionID;
 
     let out = "";
     try {
